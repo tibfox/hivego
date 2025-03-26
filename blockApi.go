@@ -9,18 +9,18 @@ import (
 )
 
 type getBlockRangeQueryParams struct {
-	StartingBlockNum uint64 `json:"starting_block_num"`
-	Count            uint64 `json:"count"`
+	StartingBlockNum int `json:"starting_block_num"`
+	Count            int `json:"count"`
 }
 
 type getBlockQueryParams struct {
-	BlockNum uint64 `json:"block_num"`
+	BlockNum int `json:"block_num"`
 }
 
 type getVirtualOpsQueryParams struct {
-	BlockNum          uint64 `json:"block_num"`
-	OnlyVirtual       bool   `json:"only_virtual"`
-	IncludeReversible bool   `json:"include_reversible"`
+	BlockNum          int  `json:"block_num"`
+	OnlyVirtual       bool `json:"only_virtual"`
+	IncludeReversible bool `json:"include_reversible"`
 }
 
 const (
@@ -29,7 +29,7 @@ const (
 )
 
 type Block struct {
-	BlockNumber           uint64
+	BlockNumber           int
 	BlockID               string        `json:"block_id"`
 	Previous              string        `json:"previous"`
 	Timestamp             string        `json:"timestamp"`
@@ -59,7 +59,7 @@ type Operation struct {
 }
 
 type VirtualOp struct {
-	Block uint64 `json:"block"`
+	Block int `json:"block"`
 	Op    struct {
 		Type  string                 `json:"type"`
 		Value map[string]interface{} `json:"value"`
@@ -178,11 +178,11 @@ var OperationType = operationTypes{
 	RecurrentTransfer:           "recurrent_transfer_operation",
 }
 
-func (h *HiveRpcNode) GetBlockRange(startBlock uint64, count uint64) ([]Block, error) {
+func (h *HiveRpcNode) GetBlockRange(startBlock int, count int) ([]Block, error) {
 	return h.fetchBlockInRange(startBlock, count)
 }
 
-func (h *HiveRpcNode) GetBlock(blockNum uint64) (Block, error) {
+func (h *HiveRpcNode) GetBlock(blockNum int) (Block, error) {
 	blocks, err := h.fetchBlock([]getBlockQueryParams{{BlockNum: blockNum}})
 	if err != nil || len(blocks) == 0 {
 		return Block{}, err
@@ -229,7 +229,7 @@ func (h *HiveRpcNode) StreamBlocks() (<-chan Block, error) {
 	return blockChan, nil
 }
 
-func (h *HiveRpcNode) FetchVirtualOps(blockHeight uint64, onlyVirtual bool, IncludeReversible bool) ([]VirtualOp, error) {
+func (h *HiveRpcNode) FetchVirtualOps(blockHeight int, onlyVirtual bool, IncludeReversible bool) ([]VirtualOp, error) {
 	params := getVirtualOpsQueryParams{BlockNum: blockHeight, OnlyVirtual: IncludeReversible, IncludeReversible: IncludeReversible}
 	query := hrpcQuery{method: "account_history_api.get_ops_in_block", params: params}
 	queries := []hrpcQuery{query}
@@ -251,7 +251,7 @@ func (h *HiveRpcNode) FetchVirtualOps(blockHeight uint64, onlyVirtual bool, Incl
 					Value map[string]interface{} `json:"value"`
 					// Value interface{} `json:"value"`
 				} `json:"op"`
-				Block       uint64 `json:"block"`
+				Block       int    `json:"block"`
 				OpInTrx     int    `json:"op_in_trx"`
 				TrxId       string `json:"trx_id"`
 				TrxInBlock  int    `json:"trx_in_block"`
@@ -292,7 +292,7 @@ func (h *HiveRpcNode) FetchVirtualOps(blockHeight uint64, onlyVirtual bool, Incl
 	return virtualOps, nil
 }
 
-func (h *HiveRpcNode) fetchBlockInRange(startBlock, count uint64) ([]Block, error) {
+func (h *HiveRpcNode) fetchBlockInRange(startBlock, count int) ([]Block, error) {
 	params := getBlockRangeQueryParams{StartingBlockNum: startBlock, Count: count}
 	query := hrpcQuery{method: "block_api.get_block_range", params: params}
 	queries := []hrpcQuery{query}
@@ -324,7 +324,7 @@ func (h *HiveRpcNode) fetchBlockInRange(startBlock, count uint64) ([]Block, erro
 	var processedBlocks []Block
 	for _, block := range blocks {
 		blockInt, _ := hex.DecodeString(block.BlockID[0:8])
-		block.BlockNumber = binary.BigEndian.Uint64(blockInt)
+		block.BlockNumber = int(binary.BigEndian.Uint32(blockInt))
 		processedBlocks = append(processedBlocks, block)
 	}
 	return processedBlocks, nil
@@ -363,7 +363,7 @@ func (h *HiveRpcNode) fetchBlock(params []getBlockQueryParams) ([]Block, error) 
 	var processedBlocks []Block
 	for _, block := range blocks {
 		blockInt, _ := hex.DecodeString(block.BlockID[0:8])
-		block.BlockNumber = binary.BigEndian.Uint64(blockInt)
+		block.BlockNumber = int(binary.BigEndian.Uint32(blockInt))
 		processedBlocks = append(processedBlocks, block)
 	}
 	return processedBlocks, nil

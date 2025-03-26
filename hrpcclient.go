@@ -15,7 +15,7 @@ type HiveRpcNode struct {
 }
 
 type globalProps struct {
-	HeadBlockNumber uint64 `json:"head_block_number"`
+	HeadBlockNumber int    `json:"head_block_number"`
 	HeadBlockId     string `json:"head_block_id"`
 	Time            string `json:"time"`
 }
