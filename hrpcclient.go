@@ -128,10 +128,8 @@ func (h *HiveRpcNode) logFailureCounts() {
 }
 
 func (h *HiveRpcNode) logSwitchingNode(currentIndex int, nextIndex int, numNodes int) {
-	if nextIndex < numNodes {
-		nextEndpoint := h.addresses[nextIndex]
-		log.Printf("DEBUG: Switching to node: %s (index %d)", nextEndpoint, nextIndex)
-	}
+	nextEndpoint := h.addresses[nextIndex]
+	log.Printf("DEBUG: Switching to node: %s (index %d)", nextEndpoint, nextIndex)
 }
 
 func (h *HiveRpcNode) rpcExecBatchFast(queries []hrpcQuery) ([][]byte, error) {
