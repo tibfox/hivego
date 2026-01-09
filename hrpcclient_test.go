@@ -8,7 +8,7 @@ func TestFailoverWithMultipleNodes(t *testing.T) {
 	// Test with one good node and one bad node
 	// Using a real endpoint and an invalid one to simulate failure
 	addrs := []string{"https://api.hive.blog", "https://invalid.endpoint.com"}
-	rpc := NewHiveRpc(addrs, true)
+	rpc := NewHiveRpc(addrs)
 
 	// This should succeed on the first node
 	_, err := rpc.GetDynamicGlobalProps()
@@ -30,7 +30,7 @@ func TestFailoverWithMultipleNodes(t *testing.T) {
 func TestFailoverAllNodesFail(t *testing.T) {
 	// Test with all invalid nodes
 	addrs := []string{"https://invalid1.com", "https://invalid2.com"}
-	rpc := NewHiveRpc(addrs, true)
+	rpc := NewHiveRpc(addrs)
 
 	_, err := rpc.GetDynamicGlobalProps()
 	if err == nil {
@@ -47,7 +47,7 @@ func TestFailoverAllNodesFail(t *testing.T) {
 func TestRoundRobinPriority(t *testing.T) {
 	// Test that it starts from currentIndex and updates to last successful
 	addrs := []string{"https://invalid.com", "https://api.hive.blog"}
-	rpc := NewHiveRpc(addrs, true)
+	rpc := NewHiveRpc(addrs)
 
 	// First call should fail on invalid, succeed on second, set currentIndex to 1
 	_, err := rpc.GetDynamicGlobalProps()
@@ -77,7 +77,7 @@ func TestRoundRobinPriority(t *testing.T) {
 
 func TestRollingAverage(t *testing.T) {
 	addrs := []string{"https://api.hive.blog"}
-	rpc := NewHiveRpc(addrs, true)
+	rpc := NewHiveRpc(addrs)
 
 	// Make a successful call
 	_, err := rpc.GetDynamicGlobalProps()
