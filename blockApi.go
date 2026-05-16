@@ -4,9 +4,35 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"time"
 )
+
+// review2 HIGH #79: build the get_ops_in_block params so OnlyVirtual follows
+// the caller's onlyVirtual argument (it previously took include_reversible,
+// so onlyVirtual was ignored and ALL ops were returned).
+func newGetVirtualOpsParams(blockHeight int, onlyVirtual, includeReversible bool) getVirtualOpsQueryParams {
+	return getVirtualOpsQueryParams{
+		BlockNum:          blockHeight,
+		OnlyVirtual:       onlyVirtual,
+		IncludeReversible: includeReversible,
+	}
+}
+
+// review2 HIGH #21: block.BlockID[0:8] panicked (slice bounds out of range)
+// on a short/empty block_id and the hex error was discarded. Parse the
+// big-endian block number from the first 4 bytes, erroring instead.
+func blockNumFromID(blockID string) (int, error) {
+	if len(blockID) < 8 {
+		return 0, errors.New("invalid block_id: too short")
+	}
+	b, err := hex.DecodeString(blockID[0:8])
+	if err != nil || len(b) < 4 {
+		return 0, errors.New("invalid block_id: not 8 hex chars")
+	}
+	return int(binary.BigEndian.Uint32(b)), nil
+}
 
 type getBlockRangeQueryParams struct {
 	StartingBlockNum int `json:"starting_block_num"`
@@ -230,7 +256,7 @@ func (h *HiveRpcNode) StreamBlocks() (<-chan Block, error) {
 }
 
 func (h *HiveRpcNode) FetchVirtualOps(blockHeight int, onlyVirtual bool, IncludeReversible bool) ([]VirtualOp, error) {
-	params := getVirtualOpsQueryParams{BlockNum: blockHeight, OnlyVirtual: IncludeReversible, IncludeReversible: IncludeReversible}
+	params := newGetVirtualOpsParams(blockHeight, onlyVirtual, IncludeReversible)
 	query := hrpcQuery{method: "account_history_api.get_ops_in_block", params: params}
 	queries := []hrpcQuery{query}
 
@@ -321,8 +347,13 @@ func (h *HiveRpcNode) fetchBlockInRange(startBlock, count int) ([]Block, error) 
 
 	var processedBlocks []Block
 	for _, block := range blocks {
-		blockInt, _ := hex.DecodeString(block.BlockID[0:8])
-		block.BlockNumber = int(binary.BigEndian.Uint32(blockInt))
+		blockNum, bnErr := blockNumFromID(block.BlockID)
+		if bnErr != nil {
+			// review2 HIGH #21: skip a malformed block_id instead of
+			// panicking on block.BlockID[0:8].
+			continue
+		}
+		block.BlockNumber = blockNum
 		processedBlocks = append(processedBlocks, block)
 	}
 	return processedBlocks, nil
@@ -359,8 +390,13 @@ func (h *HiveRpcNode) fetchBlock(params []getBlockQueryParams) ([]Block, error) 
 	}
 	var processedBlocks []Block
 	for _, block := range blocks {
-		blockInt, _ := hex.DecodeString(block.BlockID[0:8])
-		block.BlockNumber = int(binary.BigEndian.Uint32(blockInt))
+		blockNum, bnErr := blockNumFromID(block.BlockID)
+		if bnErr != nil {
+			// review2 HIGH #21: skip a malformed block_id instead of
+			// panicking on block.BlockID[0:8].
+			continue
+		}
+		block.BlockNumber = blockNum
 		processedBlocks = append(processedBlocks, block)
 	}
 	return processedBlocks, nil
