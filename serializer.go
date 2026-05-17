@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -222,7 +221,11 @@ func (o TransferOperation) SerializeOp() ([]byte, error) {
 	transferBuf.Write([]byte{opIdB(o.OpName())})
 	appendVString(o.From, &transferBuf)
 	appendVString(o.To, &transferBuf)
-	appendVAsset(o.Amount, &transferBuf)
+	// review2 #46: a malformed Amount must not silently serialize a
+	// transfer with missing/wrong asset bytes and a nil error.
+	if err := appendVAsset(o.Amount, &transferBuf); err != nil {
+		return nil, err
+	}
 	appendVString(o.Memo, &transferBuf)
 
 	return transferBuf.Bytes(), nil
@@ -240,9 +243,16 @@ func (a AccountCreateOperation) SerializeOp() ([]byte, error) {
 
 	appendVString(a.Creator, &buf)
 	appendVString(a.NewAccountName, &buf)
-	serializeAuthority(a.Owner, &buf)
-	serializeAuthority(a.Active, &buf)
-	serializeAuthority(a.Posting, &buf)
+	// review2 #102: fail closed if any authority can't be serialized.
+	if err := serializeAuthority(a.Owner, &buf); err != nil {
+		return nil, err
+	}
+	if err := serializeAuthority(a.Active, &buf); err != nil {
+		return nil, err
+	}
+	if err := serializeAuthority(a.Posting, &buf); err != nil {
+		return nil, err
+	}
 
 	err = writePublicKey(a.MemoKey, &buf)
 	if err != nil {
@@ -264,9 +274,16 @@ func (a AccountUpdateOperation) SerializeOp() ([]byte, error) {
 
 	// serialize optional authorities (owner, active, posting)
 	// TODO: THIS IS UNTESTED
-	appendOptionalAuthority(a.Owner, &buf)
-	appendOptionalAuthority(a.Active, &buf)
-	appendOptionalAuthority(a.Posting, &buf)
+	// review2 #102: fail closed if any optional authority can't be serialized.
+	if err := appendOptionalAuthority(a.Owner, &buf); err != nil {
+		return nil, err
+	}
+	if err := appendOptionalAuthority(a.Active, &buf); err != nil {
+		return nil, err
+	}
+	if err := appendOptionalAuthority(a.Posting, &buf); err != nil {
+		return nil, err
+	}
 
 	// memo key
 	//
@@ -298,7 +315,11 @@ func (o TransferToSavings) SerializeOp() ([]byte, error) {
 	buf.WriteByte(opIdB(o.OpName()))
 	appendVString(o.From, &buf)
 	appendVString(o.To, &buf)
-	appendVAsset(o.Amount, &buf)
+	// review2 #46: propagate malformed-asset errors instead of
+	// silently emitting a truncated savings transfer.
+	if err := appendVAsset(o.Amount, &buf); err != nil {
+		return nil, err
+	}
 	appendVString(o.Memo, &buf)
 
 	return buf.Bytes(), nil
@@ -321,7 +342,11 @@ func (o TransferFromSavings) SerializeOp() ([]byte, error) {
 		return nil, err
 	}
 	appendVString(o.To, &buf)
-	appendVAsset(o.Amount, &buf)
+	// review2 #46: propagate malformed-asset errors instead of
+	// silently emitting a truncated savings transfer.
+	if err := appendVAsset(o.Amount, &buf); err != nil {
+		return nil, err
+	}
 	appendVString(o.Memo, &buf)
 
 	return buf.Bytes(), nil
@@ -375,13 +400,14 @@ func (o ClaimAccountOperation) SerializeOp() ([]byte, error) {
 }
 
 // todo: UNTESTED
-func appendOptionalAuthority(auth *Auths, buf *bytes.Buffer) {
+func appendOptionalAuthority(auth *Auths, buf *bytes.Buffer) error {
 	if auth != nil {
 		buf.WriteByte(1) // field is present, so we prepend a 1
-		serializeAuthority(*auth, buf)
-	} else {
-		buf.WriteByte(0) // field is absent, so we write a 0
+		// review2 #102: propagate serialization failure.
+		return serializeAuthority(*auth, buf)
 	}
+	buf.WriteByte(0) // field is absent, so we write a 0
+	return nil
 }
 
 // todo: UNTESTED
@@ -407,43 +433,54 @@ func WriteVarint(w io.Writer, x int64) error {
 }
 
 // todo: UNTESTED
-func serializeAuthority(auth Auths, buf *bytes.Buffer) {
-	// write weight_threshold
-	err := binary.Write(buf, binary.LittleEndian, uint32(auth.WeightThreshold))
-	if err != nil {
-		fmt.Printf("Error writing weight_threshold: %v\n", err)
-		return
+// review2 #102: serializeAuthority previously logged and silently
+// returned on any failure (write error, or a non-string/non-int auth
+// tuple element which also panicked), producing a TRUNCATED authority
+// that callers signed and broadcast as if valid. Return every error so
+// callers can fail closed, and comma-ok the tuple assertions.
+func serializeAuthority(auth Auths, buf *bytes.Buffer) error {
+	if err := binary.Write(buf, binary.LittleEndian, uint32(auth.WeightThreshold)); err != nil {
+		return fmt.Errorf("authority weight_threshold: %w", err)
 	}
 
-	// write account_auths
-	err = WriteUvarint(buf, uint64(len(auth.AccountAuths)))
-	if err != nil {
-		log.Printf("error writing account_auths length: %v\n", err)
-		return
+	if err := WriteUvarint(buf, uint64(len(auth.AccountAuths))); err != nil {
+		return fmt.Errorf("authority account_auths length: %w", err)
 	}
 	for _, accountAuth := range auth.AccountAuths {
-		appendVString(accountAuth[0].(string), buf)
-		err = binary.Write(buf, binary.LittleEndian, uint16(accountAuth[1].(int)))
-		if err != nil {
-			log.Printf("error writing account_auth weight: %v\n", err)
-			return
+		name, ok := accountAuth[0].(string)
+		if !ok {
+			return fmt.Errorf("authority account_auth name is not a string: %T", accountAuth[0])
+		}
+		weight, ok := accountAuth[1].(int)
+		if !ok {
+			return fmt.Errorf("authority account_auth weight is not an int: %T", accountAuth[1])
+		}
+		appendVString(name, buf)
+		if err := binary.Write(buf, binary.LittleEndian, uint16(weight)); err != nil {
+			return fmt.Errorf("authority account_auth weight: %w", err)
 		}
 	}
 
-	// write key_auths
-	err = WriteUvarint(buf, uint64(len(auth.KeyAuths)))
-	if err != nil {
-		log.Printf("error writing key_auths length: %v\n", err)
-		return
+	if err := WriteUvarint(buf, uint64(len(auth.KeyAuths))); err != nil {
+		return fmt.Errorf("authority key_auths length: %w", err)
 	}
 	for _, keyAuth := range sortKeyAuth(auth.KeyAuths) {
-		writePublicKey(keyAuth[0].(string), buf)
-		err = binary.Write(buf, binary.LittleEndian, uint16(keyAuth[1].(int)))
-		if err != nil {
-			log.Printf("error writing key_auth weight: %v\n", err)
-			return
+		pub, ok := keyAuth[0].(string)
+		if !ok {
+			return fmt.Errorf("authority key_auth key is not a string: %T", keyAuth[0])
+		}
+		weight, ok := keyAuth[1].(int)
+		if !ok {
+			return fmt.Errorf("authority key_auth weight is not an int: %T", keyAuth[1])
+		}
+		if err := writePublicKey(pub, buf); err != nil {
+			return fmt.Errorf("authority key_auth key: %w", err)
+		}
+		if err := binary.Write(buf, binary.LittleEndian, uint16(weight)); err != nil {
+			return fmt.Errorf("authority key_auth weight: %w", err)
 		}
 	}
+	return nil
 }
 
 func writePublicKey(pub string, buf *bytes.Buffer) error {
