@@ -14,7 +14,16 @@ import (
 )
 
 func opIdB(opName string) byte {
-	id := getHiveOpId(opName)
+	id, ok := getHiveOpId(opName)
+	if !ok {
+		// review7 HG-M10: an unregistered op name previously mapped to 0 ==
+		// vote_operation, silently mis-serializing the op as a vote inside an
+		// otherwise-valid (and then signed) transaction. Every HiveOperation's
+		// OpName must be registered in getHiveOpIds, so an unknown op is a
+		// programmer error — fail loudly instead of producing a wrong-but-signed
+		// transaction.
+		panic("hivego: unknown operation type (not registered in getHiveOpIds): " + opName)
+	}
 	return byte(id)
 }
 
@@ -62,7 +71,15 @@ func appendVString(s string, b *bytes.Buffer) *bytes.Buffer {
 }
 
 func appendVStringArray(a []string, b *bytes.Buffer) *bytes.Buffer {
-	b.Write([]byte{byte(len(a))})
+	// review7 HG-M14: graphene vector lengths are unsigned varints (same as
+	// appendVString / countOpsB), not a single byte. The old `byte(len(a))`
+	// truncated at 256 (wrapping to a 0 prefix) and already produced an invalid
+	// prefix for any array >= 128 entries — e.g. a multisig custom_json with
+	// many required_auths. For < 128 entries the varint is the identical single
+	// byte, so well-formed small arrays are unchanged.
+	vBuf := make([]byte, 5)
+	vLen := binary.PutUvarint(vBuf, uint64(len(a)))
+	b.Write(vBuf[0:vLen])
 	for _, s := range a {
 		appendVString(s, b)
 	}
@@ -119,6 +136,14 @@ func appendVAsset(asset string, b *bytes.Buffer) error {
 	amount, err := strconv.ParseInt(fullNumber, 10, 64)
 	if err != nil {
 		return err
+	}
+
+	// review7 HG-M8: ParseInt accepts a negative value, which would serialize
+	// as a two's-complement int64 — an asset amount is unsigned on Hive, so a
+	// negative would be read as a huge positive (e.g. -5000 -> 78ecffff...).
+	// Reject it instead of producing a malformed signed transfer.
+	if amount < 0 {
+		return errors.New("asset amount must be non-negative: " + asset)
 	}
 
 	// Write the amount as int64

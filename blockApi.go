@@ -8,6 +8,23 @@ import (
 	"time"
 )
 
+// blockNumberFromID parses the leading 4 bytes (8 hex chars) of a Hive
+// block_id as the big-endian block number.
+//
+// review7 HG-M11: a block_id shorter than 8 hex chars (a malformed or
+// truncated RPC response) previously panicked on the BlockID[0:8] slice,
+// crashing the caller. Guard the length and bad hex, returning 0 instead.
+func blockNumberFromID(blockID string) int {
+	if len(blockID) < 8 {
+		return 0
+	}
+	blockInt, err := hex.DecodeString(blockID[0:8])
+	if err != nil || len(blockInt) < 4 {
+		return 0
+	}
+	return int(binary.BigEndian.Uint32(blockInt))
+}
+
 type getBlockRangeQueryParams struct {
 	StartingBlockNum int `json:"starting_block_num"`
 	Count            int `json:"count"`
@@ -230,7 +247,9 @@ func (h *HiveRpcNode) StreamBlocks() (<-chan Block, error) {
 }
 
 func (h *HiveRpcNode) FetchVirtualOps(blockHeight int, onlyVirtual bool, IncludeReversible bool) ([]VirtualOp, error) {
-	params := getVirtualOpsQueryParams{BlockNum: blockHeight, OnlyVirtual: IncludeReversible, IncludeReversible: IncludeReversible}
+	// review7 HG-M2: forward the caller's onlyVirtual instead of binding it to
+	// IncludeReversible, which made true/false return identical results.
+	params := getVirtualOpsQueryParams{BlockNum: blockHeight, OnlyVirtual: onlyVirtual, IncludeReversible: IncludeReversible}
 	query := hrpcQuery{method: "account_history_api.get_ops_in_block", params: params}
 	queries := []hrpcQuery{query}
 
@@ -321,8 +340,7 @@ func (h *HiveRpcNode) fetchBlockInRange(startBlock, count int) ([]Block, error) 
 
 	var processedBlocks []Block
 	for _, block := range blocks {
-		blockInt, _ := hex.DecodeString(block.BlockID[0:8])
-		block.BlockNumber = int(binary.BigEndian.Uint32(blockInt))
+		block.BlockNumber = blockNumberFromID(block.BlockID)
 		processedBlocks = append(processedBlocks, block)
 	}
 	return processedBlocks, nil
@@ -359,8 +377,7 @@ func (h *HiveRpcNode) fetchBlock(params []getBlockQueryParams) ([]Block, error) 
 	}
 	var processedBlocks []Block
 	for _, block := range blocks {
-		blockInt, _ := hex.DecodeString(block.BlockID[0:8])
-		block.BlockNumber = int(binary.BigEndian.Uint32(blockInt))
+		block.BlockNumber = blockNumberFromID(block.BlockID)
 		processedBlocks = append(processedBlocks, block)
 	}
 	return processedBlocks, nil

@@ -104,8 +104,15 @@ func GphBase58CheckDecode(input string) ([]byte, [1]byte, error) {
 }
 
 func GphBase58Encode(input []byte, version [1]byte) string {
-	checksum := checksum(append([]byte{version[0]}, input...))
-	encoded := append(input, checksum[:4]...)
+	// review7 HG-M9: the version byte must be part of the encoded output, not
+	// just the checksum pre-image — GphBase58CheckDecode reads decoded[0] as the
+	// version and re-derives the checksum over (version || payload). The old
+	// form emitted base58(input || checksum), dropping the version prefix, so a
+	// GphBase58CheckDecode round-trip mis-read the first payload byte as the
+	// version and failed the checksum.
+	payload := append([]byte{version[0]}, input...)
+	checksum := checksum(payload)
+	encoded := append(payload, checksum[:4]...)
 	return base58.Encode(encoded)
 }
 
