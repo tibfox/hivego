@@ -3,6 +3,7 @@ package hivego
 import (
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v2"
 )
@@ -25,6 +26,28 @@ func (t *HiveTransaction) GenerateTrxId() (string, error) {
 	digest := HashTx(tB)
 
 	return hex.EncodeToString(digest)[0:40], nil
+}
+
+// ValidateExpiration reports an error if the transaction's Expiration is
+// malformed or not strictly in the future relative to `now` (compared in UTC,
+// the timezone Hive uses for the expiration field).
+//
+// review7 HG-M16: Sign() is a pure signing primitive and is deliberately left
+// time-independent — a tx must be re-signable/reproducible (fixed-vector tests
+// sign a tx dated 2016), so Sign() cannot reject an expired tx without breaking
+// deterministic signing. Callers that build a tx for broadcast should call
+// ValidateExpiration(time.Now().UTC()) first, so they don't sign and broadcast
+// a tx the node will only reject as expired.
+func (t *HiveTransaction) ValidateExpiration(now time.Time) error {
+	exp, err := time.Parse("2006-01-02T15:04:05", t.Expiration)
+	if err != nil {
+		return fmt.Errorf("invalid expiration %q: %w", t.Expiration, err)
+	}
+	if !exp.After(now.UTC()) {
+		return fmt.Errorf("transaction expiration %s is not in the future (now %s)",
+			t.Expiration, now.UTC().Format("2006-01-02T15:04:05"))
+	}
+	return nil
 }
 
 func (t *HiveTransaction) Sign(keyPair KeyPair, chainId ...string) (string, error) {

@@ -215,10 +215,15 @@ func getHiveChainId() []byte {
 	return cid
 }
 
-func getHiveOpId(op string) uint64 {
+// getHiveOpId returns the graphene operation id for op and whether op is a
+// registered operation. review7 HG-M10: it used to return the map zero-value
+// (0 == vote_operation) for an unregistered op, so opIdB silently serialized an
+// unknown op as a vote.
+func getHiveOpId(op string) (uint64, bool) {
 	op = op + "_operation"
 	hiveOpsIds := getHiveOpIds()
-	return hiveOpsIds[op]
+	id, ok := hiveOpsIds[op]
+	return id, ok
 }
 
 func getHiveOpIds() map[string]uint64 {

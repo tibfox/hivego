@@ -20,9 +20,9 @@ func newGetVirtualOpsParams(blockHeight int, onlyVirtual, includeReversible bool
 	}
 }
 
-// review2 HIGH #21: block.BlockID[0:8] panicked (slice bounds out of range)
-// on a short/empty block_id and the hex error was discarded. Parse the
-// big-endian block number from the first 4 bytes, erroring instead.
+// review2 HIGH #21 / review7 HG-M11: block.BlockID[0:8] panicked (slice bounds
+// out of range) on a short/empty block_id and the hex error was discarded.
+// Parse the big-endian block number from the first 4 bytes, erroring instead.
 func blockNumFromID(blockID string) (int, error) {
 	if len(blockID) < 8 {
 		return 0, errors.New("invalid block_id: too short")
@@ -349,9 +349,9 @@ func (h *HiveRpcNode) fetchBlockInRange(startBlock, count int) ([]Block, error) 
 	for _, block := range blocks {
 		blockNum, bnErr := blockNumFromID(block.BlockID)
 		if bnErr != nil {
-			// review2 HIGH #21: propagate a malformed block_id instead of
-			// panicking on block.BlockID[0:8] or silently skipping it (which
-			// made GetBlock return an empty Block{} with a nil error and
+			// review2 HIGH #21 / review7 HG-M11: propagate a malformed block_id
+			// instead of panicking on block.BlockID[0:8] or silently skipping it
+			// (which made GetBlock return an empty Block{} with a nil error and
 			// StreamBlocks advance past the height without retrying).
 			return nil, bnErr
 		}
@@ -394,9 +394,9 @@ func (h *HiveRpcNode) fetchBlock(params []getBlockQueryParams) ([]Block, error) 
 	for _, block := range blocks {
 		blockNum, bnErr := blockNumFromID(block.BlockID)
 		if bnErr != nil {
-			// review2 HIGH #21: propagate a malformed block_id instead of
-			// panicking on block.BlockID[0:8] or silently skipping it (which
-			// made GetBlock return an empty Block{} with a nil error and
+			// review2 HIGH #21 / review7 HG-M11: propagate a malformed block_id
+			// instead of panicking on block.BlockID[0:8] or silently skipping it
+			// (which made GetBlock return an empty Block{} with a nil error and
 			// StreamBlocks advance past the height without retrying).
 			return nil, bnErr
 		}
