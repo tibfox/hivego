@@ -164,7 +164,11 @@ type ClaimRewardOperation struct {
 }
 
 func (o ClaimRewardOperation) OpName() string {
-	return o.opText
+	// review7 HG-M10: return the registered literal (like every other op)
+	// instead of the unexported opText, which was empty on a directly
+	// constructed ClaimRewardOperation and made SerializeOp fail as an
+	// "unknown operation".
+	return "claim_reward_balance"
 }
 
 type ClaimAccountOperation struct {

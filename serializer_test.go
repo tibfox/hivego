@@ -6,9 +6,12 @@ import (
 )
 
 func TestOpIdB(t *testing.T) {
-	got := opIdB("custom_json")
+	got, err := opIdB("custom_json")
 	expected := byte(18)
 
+	if err != nil {
+		t.Fatal("unexpected error:", err)
+	}
 	if got != expected {
 		t.Error("Expected", expected, "got")
 	}

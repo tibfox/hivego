@@ -39,20 +39,37 @@ func TestAuditReview7_HGM9_Base58RoundTrip(t *testing.T) {
 }
 
 // HG-M10: opIdB must fail loudly on an unregistered op instead of returning 0
-// (vote_operation) and silently mis-serializing it.
+// (vote_operation) and silently mis-serializing it. Resolved as a returned
+// error (not a panic) so SerializeOp callers can fail closed.
 func TestAuditReview7_HGM10_UnknownOpFailsLoud(t *testing.T) {
-	if opIdB("vote") != 0 {
-		t.Error("HG-M10: vote must remain op id 0")
+	if id, err := opIdB("vote"); err != nil || id != 0 {
+		t.Errorf("HG-M10: vote must remain op id 0, got id=%d err=%v", id, err)
 	}
-	if got := opIdB("custom_json"); got == 0 {
-		t.Error("HG-M10: a known non-vote op must not collide with vote (0)")
+	if id, err := opIdB("custom_json"); err != nil || id == 0 {
+		t.Errorf("HG-M10: a known non-vote op must not collide with vote (0), got id=%d err=%v", id, err)
 	}
-	defer func() {
-		if recover() == nil {
-			t.Error("HG-M10: an unregistered op must panic, not map to vote (0)")
-		}
-	}()
-	_ = opIdB("definitely_not_a_real_op")
+	if _, err := opIdB("definitely_not_a_real_op"); err == nil {
+		t.Error("HG-M10: an unregistered op must error, not map to vote (0)")
+	}
+}
+
+// HG-M10 (follow-up): a directly-constructed ClaimRewardOperation has an empty
+// opText; now that OpName returns the registered literal, it must serialize
+// cleanly (op id 39) instead of failing/panicking as an "unknown operation".
+func TestAuditReview7_HGM10_ClaimRewardDirectConstruct(t *testing.T) {
+	op := ClaimRewardOperation{
+		Account:     "alice",
+		RewardHBD:   "0.000 HBD",
+		RewardHIVE:  "0.000 HIVE",
+		RewardVests: "0.000000 VESTS",
+	}
+	b, err := op.SerializeOp()
+	if err != nil {
+		t.Fatalf("HG-M10: directly-constructed ClaimRewardOperation must serialize, got err: %v", err)
+	}
+	if len(b) == 0 || b[0] != 39 {
+		t.Fatalf("HG-M10: claim_reward_balance op id must be 39, got first byte %v", b)
+	}
 }
 
 // HG-M11: a short/empty block_id must not panic the BlockID[0:8] slice.

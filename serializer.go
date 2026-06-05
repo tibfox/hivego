@@ -12,18 +12,29 @@ import (
 	"time"
 )
 
-func opIdB(opName string) byte {
+func opIdB(opName string) (byte, error) {
 	id, ok := getHiveOpId(opName)
 	if !ok {
 		// review7 HG-M10: an unregistered op name previously mapped to 0 ==
 		// vote_operation, silently mis-serializing the op as a vote inside an
-		// otherwise-valid (and then signed) transaction. Every HiveOperation's
-		// OpName must be registered in getHiveOpIds, so an unknown op is a
-		// programmer error — fail loudly instead of producing a wrong-but-signed
-		// transaction.
-		panic("hivego: unknown operation type (not registered in getHiveOpIds): " + opName)
+		// otherwise-valid (and then signed) transaction. Return an error so the
+		// caller's SerializeOp fails closed instead of emitting a
+		// wrong-but-signed op.
+		return 0, fmt.Errorf("hivego: unknown operation type (not registered in getHiveOpIds): %q", opName)
 	}
-	return byte(id)
+	return byte(id), nil
+}
+
+// writeOpId resolves the operation id for opName and writes it to buf,
+// returning an error for an unregistered op (review7 HG-M10) so the caller's
+// SerializeOp fails closed instead of emitting a wrong-but-signed op.
+func writeOpId(opName string, buf *bytes.Buffer) error {
+	id, err := opIdB(opName)
+	if err != nil {
+		return err
+	}
+	buf.WriteByte(id)
+	return nil
 }
 
 func refBlockNumB(refBlockNumber uint16) []byte {
@@ -193,7 +204,9 @@ func serializeOps(ops []HiveOperation) ([]byte, error) {
 
 func (o voteOperation) SerializeOp() ([]byte, error) {
 	var voteBuf bytes.Buffer
-	voteBuf.Write([]byte{opIdB(o.OpName())})
+	if err := writeOpId(o.OpName(), &voteBuf); err != nil {
+		return nil, err
+	}
 	appendVString(o.Voter, &voteBuf)
 	appendVString(o.Author, &voteBuf)
 	appendVString(o.Permlink, &voteBuf)
@@ -207,7 +220,9 @@ func (o voteOperation) SerializeOp() ([]byte, error) {
 
 func (o CustomJsonOperation) SerializeOp() ([]byte, error) {
 	var jBuf bytes.Buffer
-	jBuf.Write([]byte{opIdB(o.OpName())})
+	if err := writeOpId(o.OpName(), &jBuf); err != nil {
+		return nil, err
+	}
 	appendVStringArray(o.RequiredAuths, &jBuf)
 	appendVStringArray(o.RequiredPostingAuths, &jBuf)
 	appendVString(o.Id, &jBuf)
@@ -218,7 +233,9 @@ func (o CustomJsonOperation) SerializeOp() ([]byte, error) {
 
 func (o ClaimRewardOperation) SerializeOp() ([]byte, error) {
 	var claimBuf bytes.Buffer
-	claimBuf.Write([]byte{opIdB(o.OpName())})
+	if err := writeOpId(o.OpName(), &claimBuf); err != nil {
+		return nil, err
+	}
 	appendVString(o.Account, &claimBuf)
 	err := appendVAsset(o.RewardHIVE, &claimBuf)
 
@@ -243,7 +260,9 @@ func (o ClaimRewardOperation) SerializeOp() ([]byte, error) {
 
 func (o TransferOperation) SerializeOp() ([]byte, error) {
 	var transferBuf bytes.Buffer
-	transferBuf.Write([]byte{opIdB(o.OpName())})
+	if err := writeOpId(o.OpName(), &transferBuf); err != nil {
+		return nil, err
+	}
 	appendVString(o.From, &transferBuf)
 	appendVString(o.To, &transferBuf)
 	// review2 #46: a malformed Amount must not silently serialize a
@@ -258,7 +277,9 @@ func (o TransferOperation) SerializeOp() ([]byte, error) {
 
 func (a AccountCreateOperation) SerializeOp() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteByte(opIdB(a.OpName()))
+	if err := writeOpId(a.OpName(), &buf); err != nil {
+		return nil, err
+	}
 
 	// fee
 	err := appendVAsset(a.Fee, &buf)
@@ -292,7 +313,9 @@ func (a AccountUpdateOperation) SerializeOp() ([]byte, error) {
 	var buf bytes.Buffer
 
 	// operation ID
-	buf.WriteByte(opIdB(a.OpName()))
+	if err := writeOpId(a.OpName(), &buf); err != nil {
+		return nil, err
+	}
 
 	// account name
 	appendVString(a.Account, &buf)
@@ -337,7 +360,9 @@ func (o TransferToSavings) SerializeOp() ([]byte, error) {
 	//   ])
 
 	var buf bytes.Buffer
-	buf.WriteByte(opIdB(o.OpName()))
+	if err := writeOpId(o.OpName(), &buf); err != nil {
+		return nil, err
+	}
 	appendVString(o.From, &buf)
 	appendVString(o.To, &buf)
 	// review2 #46: propagate malformed-asset errors instead of
@@ -360,7 +385,9 @@ func (o TransferFromSavings) SerializeOp() ([]byte, error) {
 	//   ])
 
 	var buf bytes.Buffer
-	buf.WriteByte(opIdB(o.OpName()))
+	if err := writeOpId(o.OpName(), &buf); err != nil {
+		return nil, err
+	}
 	appendVString(o.From, &buf)
 	err := binary.Write(&buf, binary.LittleEndian, uint32(o.RequestId))
 	if err != nil {
@@ -387,7 +414,9 @@ func (o CancelTransferFromSavings) SerializeOp() ([]byte, error) {
 	//   )
 
 	var buf bytes.Buffer
-	buf.WriteByte(opIdB(o.OpName()))
+	if err := writeOpId(o.OpName(), &buf); err != nil {
+		return nil, err
+	}
 	appendVString(o.From, &buf)
 	err := binary.Write(&buf, binary.LittleEndian, uint32(o.RequestId))
 	if err != nil {
@@ -399,7 +428,9 @@ func (o CancelTransferFromSavings) SerializeOp() ([]byte, error) {
 
 func (o TransferToVesting) SerializeOp() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteByte(opIdB(o.OpName()))
+	if err := writeOpId(o.OpName(), &buf); err != nil {
+		return nil, err
+	}
 	appendVString(o.From, &buf)
 	appendVString(o.To, &buf)
 	err := appendVAsset(o.Amount, &buf)
@@ -412,7 +443,9 @@ func (o TransferToVesting) SerializeOp() ([]byte, error) {
 
 func (o ClaimAccountOperation) SerializeOp() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteByte(opIdB(o.OpName()))
+	if err := writeOpId(o.OpName(), &buf); err != nil {
+		return nil, err
+	}
 
 	appendVString(o.Creator, &buf)
 	err := appendVAsset(o.Fee, &buf)
