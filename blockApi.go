@@ -349,9 +349,11 @@ func (h *HiveRpcNode) fetchBlockInRange(startBlock, count int) ([]Block, error) 
 	for _, block := range blocks {
 		blockNum, bnErr := blockNumFromID(block.BlockID)
 		if bnErr != nil {
-			// review2 HIGH #21: skip a malformed block_id instead of
-			// panicking on block.BlockID[0:8].
-			continue
+			// review2 HIGH #21: propagate a malformed block_id instead of
+			// panicking on block.BlockID[0:8] or silently skipping it (which
+			// made GetBlock return an empty Block{} with a nil error and
+			// StreamBlocks advance past the height without retrying).
+			return nil, bnErr
 		}
 		block.BlockNumber = blockNum
 		processedBlocks = append(processedBlocks, block)
@@ -392,9 +394,11 @@ func (h *HiveRpcNode) fetchBlock(params []getBlockQueryParams) ([]Block, error) 
 	for _, block := range blocks {
 		blockNum, bnErr := blockNumFromID(block.BlockID)
 		if bnErr != nil {
-			// review2 HIGH #21: skip a malformed block_id instead of
-			// panicking on block.BlockID[0:8].
-			continue
+			// review2 HIGH #21: propagate a malformed block_id instead of
+			// panicking on block.BlockID[0:8] or silently skipping it (which
+			// made GetBlock return an empty Block{} with a nil error and
+			// StreamBlocks advance past the height without retrying).
+			return nil, bnErr
 		}
 		block.BlockNumber = blockNum
 		processedBlocks = append(processedBlocks, block)

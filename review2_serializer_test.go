@@ -75,6 +75,34 @@ func TestReview2SerializeAuthorityBadTupleNoPanic(t *testing.T) {
 		}
 	}()
 
+	// review2 #102 (sortKeyAuth gap): a non-string KEY in key_auths with >=2
+	// entries panicked in sortKeyAuth's bare .(string) comparator, BEFORE
+	// serializeAuthority's comma-ok guard could catch it. Must now error, not
+	// panic.
+	badKey := AccountCreateOperation{
+		Fee:            "1.000 HIVE",
+		Creator:        "alice",
+		NewAccountName: "bob",
+		Owner: Auths{
+			WeightThreshold: 1,
+			// first key is an int, not a string — sortKeyAuth panicked here.
+			KeyAuths: [][2]interface{}{{12345, 1}, {"STMkey", 1}},
+		},
+		MemoKey: "STM8GC13uCZbP44HzMLV6zPZGwVQ8Nt4Kji8PapsPiNq1BK153XTX",
+	}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("review2 #102: SerializeOp panicked on a non-string key_auths "+
+					"key via sortKeyAuth: %v (must fail closed with an error instead)", r)
+			}
+		}()
+		if _, err := badKey.SerializeOp(); err == nil {
+			t.Fatalf("review2 #102: non-string key_auths key serialized with nil error " +
+				"(must fail closed so callers don't sign a truncated authority)")
+		}
+	}()
+
 	// Sanity: a well-formed authority serializes without error on both arms.
 	okOp := AccountCreateOperation{
 		Fee:            "1.000 HIVE",

@@ -493,8 +493,15 @@ func writePublicKey(pub string, buf *bytes.Buffer) error {
 }
 
 func sortKeyAuth(auths [][2]interface{}) [][2]interface{} {
+	// review2 #102: comma-ok the assertions so a non-string key sorts
+	// harmlessly (as "") instead of panicking here, before
+	// serializeAuthority's loop gets a chance to catch the bad type and
+	// return an error. A bare auths[i][0].(string) panicked on a malformed
+	// key_auths tuple with >=2 entries.
 	sort.Slice(auths, func(i, j int) bool {
-		return auths[i][0].(string) < auths[j][0].(string)
+		a, _ := auths[i][0].(string)
+		b, _ := auths[j][0].(string)
+		return a < b
 	})
 	return auths
 }
